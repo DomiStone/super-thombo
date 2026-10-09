@@ -29,14 +29,15 @@ function boot({blockedStorage = false} = {}) {
     focus() {document.activeElement=this;}
     setPointerCapture() {}
     getContext() {return canvas;}
+    getBoundingClientRect() {return this.rect||{width:960,height:520};}
   }
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   for(const [,id] of html.matchAll(/id="([^"]+)"/g))elements.set(id,new Element(id));
   const document={hidden:false,getElementById:id=>{assert.ok(elements.has(id),'Missing DOM ID: '+id);return elements.get(id)},createElement:()=>new Element(),addEventListener:(k,f)=>{(handlers['document:'+k]??=[]).push(f)}};
-  const context = {console,document,Image:class{complete=true;naturalWidth=1536},localStorage:{getItem:k=>{if(blockedStorage)throw Error('blocked');return store.get(k)},setItem:(k,v)=>{if(blockedStorage)throw Error('blocked');store.set(k,v)}},requestAnimationFrame:f=>{raf=f},setInterval:()=>1,setTimeout:()=>1,clearTimeout(){},alert(){},addEventListener:(k,f)=>{(handlers[k]??=[]).push(f)}};
+  const context = {console,document,Image:class{complete=true;naturalWidth=1536;naturalHeight=1024},localStorage:{getItem:k=>{if(blockedStorage)throw Error('blocked');return store.get(k)},setItem:(k,v)=>{if(blockedStorage)throw Error('blocked');store.set(k,v)}},requestAnimationFrame:f=>{raf=f},setInterval:()=>1,setTimeout:()=>1,clearTimeout(){},alert(){},addEventListener:(k,f)=>{(handlers[k]??=[]).push(f)}};
   context.window=context;
   vm.createContext(context);
-  const expose = `;globalThis.api={start,tick,draw,jump,cable,loop,returnHome,openWheel,selectWorld,updateHud,hazardActive,get state(){return {active,bonus,world,score,lives,p,coins,viruses,blocks,portals,particles,springs,hazards,dustClouds,stars,levelPlatforms,pits,checkpoint,frame,key,highScore,soundOn}},setState(v){if('score'in v)score=v.score;if('lives'in v)lives=v.lives;if('frame'in v)frame=v.frame;if('checkpoint'in v)checkpoint=v.checkpoint;}};`;
+  const expose = `;globalThis.api={fitViewport,start,tick,draw,jump,cable,loop,returnHome,openWheel,selectWorld,updateHud,hazardActive,get state(){return {W,H,active,bonus,world,score,lives,p,coins,viruses,blocks,portals,particles,springs,hazards,dustClouds,stars,levelPlatforms,pits,checkpoint,frame,key,highScore,soundOn}},setState(v){if('score'in v)score=v.score;if('lives'in v)lives=v.lives;if('frame'in v)frame=v.frame;if('checkpoint'in v)checkpoint=v.checkpoint;}};`;
   vm.runInContext(source.replace(/\}\)\(\);\s*$/, expose+'})();'),context);
   return {api:context.api,elements,store,document,drawCalls,emit:(k,e={})=>(handlers[k]||[]).forEach(f=>f({preventDefault(){},...e})),raf:now=>raf(now)};
 }
@@ -103,4 +104,14 @@ test('each world transitions through the exit and game-over returns to menu',()=
   const {api,elements}=boot();
   for(let i=0;i<8;i++){api.start(i);api.state.p.x=3800;api.cable();assert.equal(api.state.world,(i+1)%8);}
   api.setState({lives:1});Object.assign(api.state.p,{y:650,x:1140,inv:0});api.tick();assert.equal(api.state.active,false);assert.equal(elements.get('menu').classList.contains('hidden'),false);
+});
+
+test('viewport preserves proportions and gives portrait play a closer camera',()=>{
+ const {api,elements}=boot();const screen=elements.get('screen');
+ for(const [width,height] of [[844,350],[390,650],[1366,720]]){
+  screen.rect={width,height};api.fitViewport();
+  assert.ok(Math.abs(screen.width/screen.height-width/height)<.003);
+  if(width<height)assert.ok(screen.width<520,'portrait shows a closer slice of the world');
+  api.start(0);api.draw();
+ }
 });
